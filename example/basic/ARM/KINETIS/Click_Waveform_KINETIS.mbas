@@ -1,0 +1,133 @@
+'
+'Example for Waveform Click
+'
+'    Date          : apr 2018.
+'    Author        : Dusan Poluga
+'
+'Test configuration KINETIS :
+'    
+'    MCU              : MK64
+'    Dev. Board       : HEXIWEAR
+'    ARM Compiler ver : v6.0.0.0
+'
+'---
+'
+'Description :
+'
+'The application is composed of three sections :
+'
+'- System Initialization - Initialize the GPIO and communication structures.
+'- Application Initialization - Initialize the communication interface and
+'                               configure the click board.
+'- Application Task - Predefined characters are inputed from the serial port.
+'  Depending on the character sent the signal frequency, waveform or amplitude 
+'  will be changed.
+'
+'Additional Functions :
+'
+'- uint32_t waveform_aproxFreqcalculation(float freqency) - This function is used
+'  to calculate the aproximate value that will be written to the frequency set
+'  register.
+'
+'
+program Click_Waveform_KINETIS
+
+include Click_Waveform_types
+include Click_Waveform_config
+const
+    waveform_cmd as uint8_t[9] = ("+", "-", "S", "s", "T", "t", "Q", "q")
+    
+dim
+    freq as uint32_t 
+    
+sub function  waveform_aproxFreqcalculation(dim freqency as float) as uint32_t 
+dim
+    calculation as uint32_t 
+    WAVEFORM_OSC_FREQ as float 
+    WVVEFORM_CONSTANT as float ' 2^28
+    WAVEFORM_OSC_FREQ = 25000000.0
+    WVVEFORM_CONSTANT = 268435456.0
+
+    calculation = freqency * (WVVEFORM_CONSTANT / WAVEFORM_OSC_FREQ) 
+    result = calculation 
+end sub
+
+sub procedure systemInit() 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_PWM_PIN, _GPIO_OUTPUT) 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_CS_PIN, _GPIO_OUTPUT) 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_RST_PIN, _GPIO_OUTPUT) 
+    mikrobus_spiInit(_MIKROBUS1, @_WAVEFORM_SPI_CFG[0]) 
+    mikrobus_logInit(_MIKROBUS2, 57600) 
+    Delay_ms(100) 
+end sub
+
+sub procedure applicationInit() 
+    waveform_spiDriverInit(T_WAVEFORM_P(@_MIKROBUS1_GPIO), T_WAVEFORM_P(@_MIKROBUS1_SPI)) 
+    mikrobus_logWrite("System initialized", _LOG_LINE) 
+    Delay_ms(100) 
+    freq = waveform_aproxFreqcalculation(5000) 
+    waveform_squareOutput(freq) 
+    freq = 0 
+end sub
+
+sub procedure applicationTask() 
+dim
+    rxDat as char 
+    freqTmp as uint32_t 
+
+    if (UART_Rdy_Ptr()) then 
+        rxDat = UART_Rd_Ptr() 
+        mikrobus_logWrite(@rxDat, _LOG_BYTE) 
+    end if
+    if (rxDat > 0) then 
+        select case rxDat
+            case waveform_cmd[0]
+                waveform_digipotInc() 
+                rxDat = 0 
+            case waveform_cmd[1]
+                waveform_digipotDec() 
+                rxDat = 0 
+            case waveform_cmd[2]
+                freq = freq + 1 
+                freqTmp = freq << 14 
+                waveform_sineOutput(freqTmp) 
+                rxDat = 0 
+            case waveform_cmd[3]
+                freq = freq - 1 
+                freqTmp = freq << 14 
+                waveform_sineOutput(freqTmp) 
+                rxDat = 0 
+            case waveform_cmd[4]
+                freq = freq + 1 
+                freqTmp = freq << 14 
+                waveform_triangleOutput(freqTmp) 
+                rxDat = 0 
+            case waveform_cmd[5]
+                freq = freq - 1 
+                freqTmp = freq << 14 
+                waveform_triangleOutput(freqTmp) 
+                rxDat = 0 
+            case waveform_cmd[6]
+                freq = freq + 1 
+                freqTmp = freq << 14 
+                waveform_squareOutput(freqTmp) 
+                rxDat = 0 
+            case waveform_cmd[7]
+                freq = freq - 1 
+                freqTmp = freq << 14 
+                waveform_squareOutput(freqTmp) 
+                rxDat = 0 
+            case else
+        end select
+    end if
+    rxDat = 0 
+end sub
+
+main :
+
+    systemInit() 
+    applicationInit() 
+    while (1) 
+        applicationTask() 
+    wend
+end.

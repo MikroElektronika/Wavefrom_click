@@ -1,0 +1,157 @@
+{
+Example for Waveform Click
+
+    Date          : apr 2018.
+    Author        : Dusan Poluga
+
+Test configuration PIC :
+    
+    MCU             : P18F87K22
+    Dev. Board      : EasyPIC PRO v7
+    PIC Compiler ver : v7.2.0.0
+
+---
+
+Description :
+
+The application is composed of three sections :
+
+- System Initialization - Initialize the GPIO and communication structures.
+- Application Initialization - Initialize the communication interface and
+                               configure the click board.
+- Application Task - Predefined characters are inputed from the serial port.
+  Depending on the character sent the signal frequency, waveform or amplitude 
+  will be changed.
+
+Additional Functions :
+
+- uint32_t waveform_aproxFreqcalculation(float freqency) - This function is used
+  to calculate the aproximate value that will be written to the frequency set
+  register.
+
+}
+program Click_Waveform_PIC;
+
+uses Click_Waveform_types, Click_Waveform_config;
+
+const
+    waveform_cmd : array[9] of uint8_t = ('+', '-', 'S', 's', 'T', 't', 'Q', 'q'); 
+    
+var
+    freq : uint32_t; 
+    
+function  waveform_aproxFreqcalculation(freqency : real) :  uint32_t; 
+var
+    calculation : uint32_t; 
+    WAVEFORM_OSC_FREQ : real; 
+    WVVEFORM_CONSTANT : real; // 2^28
+begin
+    WAVEFORM_OSC_FREQ := 25000000.0;
+    WVVEFORM_CONSTANT := 268435456.0;
+
+    calculation := freqency * (WVVEFORM_CONSTANT / WAVEFORM_OSC_FREQ); 
+    result := calculation; 
+end;
+
+procedure systemInit(); 
+begin
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_PWM_PIN, _GPIO_OUTPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_CS_PIN, _GPIO_OUTPUT); 
+    mikrobus_gpioInit(_MIKROBUS1, _MIKROBUS_RST_PIN, _GPIO_OUTPUT); 
+    mikrobus_spiInit(_MIKROBUS1, @_WAVEFORM_SPI_CFG[0]); 
+    mikrobus_logInit(_LOG_USBUART, 57600); 
+    Delay_ms(100); 
+end;
+
+procedure applicationInit(); 
+begin
+    waveform_spiDriverInit(T_WAVEFORM_P(@_MIKROBUS1_GPIO), T_WAVEFORM_P(@_MIKROBUS1_SPI)); 
+    mikrobus_logWrite('System initialized', _LOG_LINE); 
+    Delay_ms(100); 
+    freq := waveform_aproxFreqcalculation(5000); 
+    waveform_squareOutput(freq); 
+    freq := 0; 
+end;
+
+procedure applicationTask(); 
+var
+    rxDat : char; 
+    freqTmp : uint32_t; 
+begin
+    if (UART_Rdy_Ptr()) then 
+    begin
+        rxDat := UART_Rd_Ptr(); 
+        mikrobus_logWrite(@rxDat, _LOG_BYTE); 
+    end; 
+    if (rxDat > 0) then 
+    begin
+        case rxDat of
+            waveform_cmd[0] :
+            begin
+                waveform_digipotInc(); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[1] :
+            begin
+                waveform_digipotDec(); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[2] :
+            begin
+                freq := freq + 1; 
+                freqTmp := freq shl 14; 
+                waveform_sineOutput(freqTmp); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[3] :
+            begin
+                freq := freq - 1; 
+                freqTmp := freq shl 14; 
+                waveform_sineOutput(freqTmp); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[4] :
+            begin
+                freq := freq + 1; 
+                freqTmp := freq shl 14; 
+                waveform_triangleOutput(freqTmp); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[5] :
+            begin
+                freq := freq - 1; 
+                freqTmp := freq shl 14; 
+                waveform_triangleOutput(freqTmp); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[6] :
+            begin
+                freq := freq + 1; 
+                freqTmp := freq shl 14; 
+                waveform_squareOutput(freqTmp); 
+                rxDat := 0; 
+            end;
+            waveform_cmd[7] :
+            begin
+                freq := freq - 1; 
+                freqTmp := freq shl 14; 
+                waveform_squareOutput(freqTmp); 
+                rxDat := 0; 
+            end
+            else
+            begin
+            end;
+        end;
+    end; 
+    rxDat := 0; 
+end;
+
+begin
+
+    systemInit(); 
+    applicationInit(); 
+    while (1) do 
+    begin 
+        applicationTask(); 
+    end;
+end.
